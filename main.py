@@ -275,19 +275,18 @@ train = train.sample(frac=1)
 test = train[:split]
 train = train[split:]
 
-split = 16384
-#normalize ola eks arxhs
+batch_size = 512
 model = createModel()
 
 # Assuming you have a validation generator similar to your training generator
 real_time_metrics = RealTimeMetrics(generate_data(test, artist_name, genre_ids, lyricist_and_composer, song_length, msno_artist_name,
                                    msno_and_song_id, source_system_tab_uniques, source_screen_name_uniques,
-                                  source_type_uniques, split))
+                                  source_type_uniques, batch_size))
 
 print(model.summary())
 model.fit(generate_data(train, artist_name, genre_ids, lyricist_and_composer, song_length, msno_artist_name,
                                    msno_and_song_id, source_system_tab_uniques, source_screen_name_uniques,
-                                  source_type_uniques, split), steps_per_epoch=len(train)//split,
+                                  source_type_uniques, batch_size), steps_per_epoch=len(train)//batch_size,
                                   epochs=10,
                                   callbacks=[real_time_metrics]
                                   )
