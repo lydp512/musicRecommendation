@@ -1,5 +1,5 @@
 import csv
-from keras.callbacks import Callback
+from keras.callbacks import Callback, EarlyStopping
 from keras.initializers.initializers import RandomNormal, GlorotNormal
 from keras.models import Model
 from keras.layers import concatenate, Input, Dropout, LeakyReLU, ELU
@@ -7,9 +7,12 @@ from keras.layers.core import Dense
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+from keras.layers import Concatenate
 from keras.optimizers import SGD, RMSprop, Adam
 from keras.optimizers.schedules.learning_rate_schedule import ExponentialDecay
 from sklearn import preprocessing
+from sklearn.model_selection import train_test_split
+
 pd.options.mode.chained_assignment = None
 
 
@@ -28,89 +31,83 @@ def file_read(location):
 
 
 def createModel():
-    # Define the standalone models
+    # Define input layers
     ArtistName = Input(shape=(64,))
     GenreIds = Input(shape=(64,))
     LyricistAndComposer = Input(shape=(30,))
+    SongLength = Input(shape=(1,))
+    Rest = Input(shape=(40,))
     MsnoArtistName = Input(shape=(128,))
     MsnoSongId = Input(shape=(128,))
-    Rest = Input(shape=(40,))
-    SongLength = Input(shape=(1,))
 
-    artistName = Dense(18, activation=tf.keras.layers.LeakyReLU(alpha=0.01), kernel_initializer=RandomNormal(stddev=0.05))(ArtistName)
-    artistName = Dropout(0.1)(artistName)
-    artistName = Model(inputs=ArtistName, outputs=artistName)
+    shared_layers = []
 
-    genreIds = Dense(64, activation=tf.keras.layers.LeakyReLU(alpha=0.01), kernel_initializer=RandomNormal(stddev=0.05))(GenreIds)
-    genreIds = Dropout(0.1)(genreIds)
-    genreIds = Model(inputs=GenreIds, outputs=genreIds)
+    artistName = Dense(32, activation=LeakyReLU(alpha=0.01), kernel_initializer=RandomNormal(stddev=0.05))(ArtistName)
+    artistName = Dropout(0.3)(artistName)
+    shared_layers.append(Model(inputs=ArtistName, outputs=artistName))
 
-    lyricistAndComposer = Dense(15, activation=tf.keras.layers.LeakyReLU(alpha=0.01), kernel_initializer=RandomNormal(stddev=0.05))(LyricistAndComposer)
-    lyricistAndComposer = Dropout(0.1)(lyricistAndComposer)
-    lyricistAndComposer = Model(inputs=LyricistAndComposer, outputs=lyricistAndComposer)
+    genreIds = Dense(32, activation=LeakyReLU(alpha=0.01), kernel_initializer=RandomNormal(stddev=0.05))(GenreIds)
+    genreIds = Dropout(0.3)(genreIds)
+    shared_layers.append(Model(inputs=GenreIds, outputs=genreIds))
 
-    msnoArtistName = Dense(128, activation=tf.keras.layers.LeakyReLU(alpha=0.01), kernel_initializer=RandomNormal(stddev=0.05))(MsnoArtistName)
-    msnoArtistName = Dropout(0.1)(msnoArtistName)
-    msnoArtistName = Model(inputs=MsnoArtistName, outputs=msnoArtistName)
+    lyricistAndComposer = Dense(32, activation=LeakyReLU(alpha=0.01), kernel_initializer=RandomNormal(stddev=0.05))(
+        LyricistAndComposer)
+    lyricistAndComposer = Dropout(0.3)(lyricistAndComposer)
+    shared_layers.append(Model(inputs=LyricistAndComposer, outputs=lyricistAndComposer))
 
-    msnoSongId = Dense(128, activation=tf.keras.layers.LeakyReLU(alpha=0.01), kernel_initializer=RandomNormal(stddev=0.05))(MsnoSongId)
-    msnoSongId = Dropout(0.1)(msnoSongId)
-    msnoSongId = Model(inputs=MsnoSongId, outputs=msnoSongId)
+    songLength = Dense(2, activation=LeakyReLU(alpha=0.01), kernel_initializer=RandomNormal(stddev=0.05))(SongLength)
+    songLength = Dropout(0.3)(songLength)
+    shared_layers.append(Model(inputs=SongLength, outputs=songLength))
 
-    rest = Dense(20, activation=tf.keras.layers.LeakyReLU(alpha=0.01), kernel_initializer=RandomNormal(stddev=0.05))(Rest)
-    rest = Dropout(0.1)(rest)
-    rest = Model(inputs=Rest, outputs=rest)
+    rest = Dense(20, activation=LeakyReLU(alpha=0.01), kernel_initializer=RandomNormal(stddev=0.05))(Rest)
+    rest = Dropout(0.3)(rest)
+    shared_layers.append(Model(inputs=Rest, outputs=rest))
 
-    songLength = Dense(2, activation=tf.keras.layers.LeakyReLU(alpha=0.01), kernel_initializer=RandomNormal(stddev=0.05))(SongLength)
-    songLength = Dropout(0.1)(songLength)
-    songLength = Model(inputs=SongLength, outputs=songLength)
+    msnoArtistName = Dense(64, activation=LeakyReLU(alpha=0.01), kernel_initializer=RandomNormal(stddev=0.05))(
+        MsnoArtistName)
+    msnoArtistName = Dropout(0.3)(msnoArtistName)
+    shared_layers.append(Model(inputs=MsnoArtistName, outputs=msnoArtistName))
+
+    msnoSongId = Dense(64, activation=LeakyReLU(alpha=0.01), kernel_initializer=RandomNormal(stddev=0.05))(MsnoSongId)
+    msnoSongId = Dropout(0.3)(msnoSongId)
+    shared_layers.append(Model(inputs=MsnoSongId, outputs=msnoSongId))
 
     # Merge the models
-    combinedRegular = concatenate(
-        [artistName.output, genreIds.output, lyricistAndComposer.output, songLength.output])
+    combinedRegular = concatenate([layer.output for layer in shared_layers])
     modelRegular = Dense(128, activation="relu", kernel_initializer=RandomNormal(stddev=0.05))(combinedRegular)
-    modelRegular = Dropout(0.5)(modelRegular)
-    modelRegular = Model(inputs=[artistName.input, genreIds.input, lyricistAndComposer.input, songLength.input], outputs=modelRegular)
+    modelRegular = Dropout(0.35)(modelRegular)
+    modelRegular = Model(inputs=[layer.input for layer in shared_layers], outputs=modelRegular)
 
-    combinedCategorical = concatenate([msnoArtistName.output, msnoSongId.output, rest.output])
-
-    modelCategorical = Dense(64, "relu", kernel_initializer=RandomNormal(stddev=0.05))(combinedCategorical)
-    modelCategorical = Dropout(0.5)(modelCategorical)
-    modelCategorical = Model(inputs=[msnoArtistName.input, msnoSongId.input, rest.input],
-                  outputs=modelCategorical)
-
-    combined = concatenate([modelRegular.output, modelCategorical.output])
-
-    model1 = Dense(72, activation="relu", kernel_initializer=RandomNormal(stddev=0.05))(combined)
-    model1 = Dropout(0.5)(model1)
-    model1 = Model(
-        inputs=[modelRegular.input, modelCategorical.input],
-        outputs=model1)
-
-    # model2 = Dense(128, activation="relu", kernel_initializer=RandomNormal(stddev=0.05))(model1.output)
-    # model2 = Dropout(0.5)(model2)
-    # model2 = Model(inputs=model1.input, outputs=model2)
+    # combinedRegular = concatenate([layer.output for layer in shared_layers])
+    # modelRegular = Dense(64, activation="relu", kernel_initializer=RandomNormal(stddev=0.05))(combinedRegular)
+    # modelRegular = Dropout(0.45)(modelRegular)
+    # modelRegular = Model(inputs=[layer.input for layer in shared_layers], outputs=modelRegular)
     #
-    # model3 = Dense(64, activation="softmax", kernel_initializer=RandomNormal(stddev=0.05))(model2.output)
-    # model3 = Dropout(0.5)(model3)
-    # model3 = Model(inputs=model2.input, outputs=model3)
+    # combinedMsno = concatenate([msnoArtistName.output, msnoSongId.output])
     #
-    # model4 = Dense(128, activation="softmax", kernel_regularizer=regularizers.l2(0.001), kernel_initializer=RandomNormal(stddev=0.05))(model3.output)
-    # model4 = Model(inputs=model3.input, outputs=model4)
+    # modelCategorical = Dense(64, "relu", kernel_initializer=RandomNormal(stddev=0.05))(combinedMsno)
+    # modelCategorical = Dropout(0.45)(modelCategorical)
+    # modelCategorical = Model(inputs=[msnoArtistName.input, msnoSongId.input], outputs=modelCategorical)
+    #
+    # combined = concatenate([modelRegular.output, modelCategorical.output])
 
-    test = Dense(1, activation="sigmoid", kernel_initializer=GlorotNormal(seed=42))(model1.output)
-    test = Model(inputs=model1.input, outputs=test)
+    # model1 = Dense(64, activation="relu", kernel_initializer=RandomNormal(stddev=0.05))(modelRegular)
+    # model1 = Dropout(0.15)(model1)
+    # model1 = Model(inputs=[modelRegular.input], outputs=model1)
 
-    initial_learning_rate = 0.0021  # Initial learning rate
+    test = Dense(1, activation="sigmoid", kernel_initializer=GlorotNormal(seed=42))(modelRegular.output)
+    test = Model(inputs=modelRegular.input, outputs=test)
+
+    initial_learning_rate = 0.00025
     lr_schedule = ExponentialDecay(
-        initial_learning_rate,  # Initial learning rate
-        decay_steps=20,  # Decay every 100 steps
-        decay_rate=0.9  # Reduce by 10% every time
+        initial_learning_rate,
+        decay_steps=20,
+        decay_rate=0.9
     )
 
-    test.compile(optimizer=RMSprop(learning_rate=lr_schedule),#0.0015 #Adam(learning_rate=0.0005),#RMSprop(learning_rate=0.002),#SGD(learning_rate=0.01, momentum=0.45),#optimizer=tf.keras.optimizers.RMSprop(lr=2e-5),#.Adam(learning_rate=0.0001),
-                  loss=tf.keras.losses.BinaryCrossentropy(),
-                  metrics=['accuracy'])
+    test.compile(optimizer=Adam(learning_rate=lr_schedule),
+                 loss="binary_crossentropy",
+                 metrics=['accuracy'])
 
     return test
 
@@ -139,50 +136,6 @@ def select_on_msno(table, func_train, classes):
     return func_train
 
 
-def modify_lyricist_and_composer(lyricist_and_composer, lyricist):
-    lyricist['lyricist'] = lyricist['lyricist'].str.normalize('NFKC')
-    lyricist_index = lyricist['song_id']
-    lyricist_strings = lyricist['lyricist'].str.split(pat='|', expand=True)
-    lyricist_strings.index = lyricist['song_id']
-    lyricist_dict = lyricist_and_composer.T.to_dict('list')
-    for col in lyricist_strings.columns:
-        lyricist_strings[col] = lyricist_strings[col].map(lyricist_dict)
-    lyricist_strings.index = lyricist_index
-    columns = lyricist_strings.columns.tolist()
-    del columns[0]
-    lyricist_strings_multiple_cols = lyricist_strings[
-        lyricist_strings.loc[:, lyricist_strings.columns != lyricist_strings.columns[0]].notnull().any(1)]
-    lyricist_strings_multiple_cols_index = lyricist_strings_multiple_cols.index
-    lyricist_strings = lyricist_strings[
-        lyricist_strings.loc[:, lyricist_strings.columns != lyricist_strings.columns[0]].isnull().all(1)]
-
-    lyricist_strings = lyricist_strings.iloc[:, 0]
-    lyricist_strings = pd.DataFrame(dict(zip(lyricist_strings.index, lyricist_strings.values))).T
-
-    lyricist_strings_multiple_cols = pd.concat(
-        [lyricist_strings_multiple_cols[c].apply(pd.Series).add_prefix(str(c) + "_s_") for c in
-         lyricist_strings_multiple_cols], axis=1
-    )
-    unique_vars = ["_s_" + str(var) for var in range(29,-1,-1)]
-    for var in unique_vars:
-        lyricist_strings_multiple_cols[var + '_mean'] = lyricist_strings_multiple_cols.filter(like=var).mean(axis=1)
-        lyricist_strings_multiple_cols = lyricist_strings_multiple_cols[
-            lyricist_strings_multiple_cols.columns.drop([val for val in list(lyricist_strings_multiple_cols.filter(regex=var)) if
-                                          not val.endswith('_mean')])]
-    lyricist_strings_multiple_cols.index = lyricist_strings_multiple_cols_index
-
-    lyricist_strings_multiple_cols = lyricist_strings_multiple_cols.reindex(sorted(lyricist_strings_multiple_cols.columns), axis=1)
-    lyricist_strings.columns = lyricist_strings.columns.astype(str)
-    lyricist_strings = lyricist_strings.add_prefix('_s_')
-    lyricist_strings = lyricist_strings.add_suffix('_mean')
-    lyricist_strings = lyricist_strings.reindex(sorted(lyricist_strings.columns), axis=1)
-
-    lyricist_strings = pd.concat([lyricist_strings, lyricist_strings_multiple_cols])
-
-    lyricist_strings.to_hdf('lyricist_and_composer_with_song_id_new.h5', key='df', mode='w')
-    return lyricist_strings
-
-
 def normalize(table):
     for column in table:
         table[column].fillna(value=(table[column].mean()), inplace=True)
@@ -198,10 +151,10 @@ def normalize(table):
     return table
 
 
-def prepare_rest(train, source_system_tab_uniques, source_screen_name_uniques, source_type_uniques):
-    source_system_tab = get_dummies_and_sort_columns(train['source_system_tab'], source_system_tab_uniques)
-    source_screen_name = get_dummies_and_sort_columns(train['source_screen_name'], source_screen_name_uniques)
-    source_type = get_dummies_and_sort_columns(train['source_type'], source_type_uniques)
+def prepare_rest(df, source_system_tab_uniques, source_screen_name_uniques, source_type_uniques):
+    source_system_tab = get_dummies_and_sort_columns(df['source_system_tab'], source_system_tab_uniques)
+    source_screen_name = get_dummies_and_sort_columns(df['source_screen_name'], source_screen_name_uniques)
+    source_type = get_dummies_and_sort_columns(df['source_type'], source_type_uniques)
 
     final_train = pd.concat([source_system_tab, source_screen_name], axis=1)
     final_train = pd.concat([final_train, source_type], axis=1)
@@ -215,30 +168,60 @@ def add_noise(data, noise_level=0.02):
     return data + noise
 
 
-def generate_data(train, artist_name, genre_ids, lyricist_and_composer, song_length, msno_artist_name,
+def generate_data(df, artist_name, genre_ids, lyricist_and_composer, song_length, msno_artist_name,
                                    msno_and_song_id, source_system_tab_uniques, source_screen_name_uniques,
                                   source_type_uniques, split):
-    while not train.empty:
-        partial_train = train[:split]
-        train = train[split:]
+    while True:  # Loop indefinitely for validation
+        shuffled_df = df.sample(frac=1, random_state=42).copy()  # Shuffle the dataframe
+        while not shuffled_df.empty:
+            partial_train = shuffled_df[:split]
+            shuffled_df = shuffled_df[split:]
 
-        artistName = add_noise(normalize(select_on_songid(artist_name, partial_train)))
-        genreIds = normalize(select_on_songid(genre_ids, partial_train))
-        lyricistAndComposer = add_noise(normalize(select_on_songid(lyricist_and_composer,
-                                                         partial_train)))
-        songLength = normalize(select_on_songid(song_length, partial_train))
-        # categorical
-        msnoArtistName = normalize(select_on_msno(msno_artist_name, partial_train, msno_artist_name_classes))
-        # categorical
-        msnoSongId = normalize(select_on_msno(msno_and_song_id, partial_train, msno_and_song_id_classes))
-        rest = normalize(prepare_rest(partial_train, source_system_tab_uniques, source_screen_name_uniques,
-                                      source_type_uniques))
-        y = partial_train[['target']]
-        yield ([artistName.to_numpy(), genreIds.to_numpy(), lyricistAndComposer.to_numpy(),
-               songLength.to_numpy(), msnoArtistName.to_numpy(), msnoSongId.to_numpy(), rest.to_numpy()], y.to_numpy())
+            artistName = normalize(add_noise(select_on_songid(artist_name, partial_train)))
+            genreIds = normalize(select_on_songid(genre_ids, partial_train))
+            lyricistAndComposer = normalize(add_noise(select_on_songid(lyricist_and_composer,
+                                                                       partial_train)))
+            songLength = normalize(select_on_songid(song_length, partial_train))
+            # categorical
+            msnoArtistName = normalize(select_on_msno(msno_artist_name, partial_train, msno_artist_name_classes))
+            # categorical
+            msnoSongId = normalize(select_on_msno(msno_and_song_id, partial_train, msno_and_song_id_classes))
+            rest = normalize(prepare_rest(partial_train, source_system_tab_uniques, source_screen_name_uniques,
+                                          source_type_uniques))
+            y = partial_train[['target']]
+            yield ([artistName.to_numpy(), genreIds.to_numpy(), lyricistAndComposer.to_numpy(),
+                    songLength.to_numpy(), rest.to_numpy(), msnoArtistName.to_numpy(), msnoSongId.to_numpy()],
+                   y.to_numpy())
 
 
+def generate_data_test(df, artist_name, genre_ids, lyricist_and_composer, song_length, msno_artist_name,
+                                   msno_and_song_id, source_system_tab_uniques, source_screen_name_uniques,
+                                  source_type_uniques, split):
+    while True:  # Loop indefinitely for validation
+        shuffled_df = df.sample(frac=1, random_state=42).copy()  # Shuffle the dataframe
+        while not shuffled_df.empty:
+            partial_train = shuffled_df[:split]
+            shuffled_df = shuffled_df[split:]
 
+            artistName = normalize(add_noise(select_on_songid(artist_name, partial_train)))
+            genreIds = normalize(select_on_songid(genre_ids, partial_train))
+            lyricistAndComposer = normalize(add_noise(select_on_songid(lyricist_and_composer,
+                                                                       partial_train)))
+            songLength = normalize(select_on_songid(song_length, partial_train))
+            # categorical
+            msnoArtistName = normalize(select_on_msno(msno_artist_name, partial_train, msno_artist_name_classes))
+            # categorical
+            msnoSongId = normalize(select_on_msno(msno_and_song_id, partial_train, msno_and_song_id_classes))
+            rest = normalize(prepare_rest(partial_train, source_system_tab_uniques, source_screen_name_uniques,
+                                          source_type_uniques))
+            y = partial_train[['target']]
+            yield ([artistName.to_numpy(), genreIds.to_numpy(), lyricistAndComposer.to_numpy(),
+                    songLength.to_numpy(), rest.to_numpy(), msnoArtistName.to_numpy(), msnoSongId.to_numpy()],
+                   y.to_numpy())
+
+
+model = createModel()
+myPath = '/home/lydia/PycharmProjects/musicRecommendationFiles/'
 song_length = pd.read_csv('/home/lydia/PycharmProjects/untitled/original data/songs.csv', names=['song_id', 'song_length',
                                                                                            'genre_ids', 'artist_name',
                                                                                            'composer', 'lyricist',
@@ -246,22 +229,22 @@ song_length = pd.read_csv('/home/lydia/PycharmProjects/untitled/original data/so
 
 train = pd.read_csv('/home/lydia/PycharmProjects/untitled/original data/train.csv', delimiter=',', header=0)
 
-artist_name = normalize(file_read('artist_name_64PCA.h5'))
+artist_name = normalize(file_read(myPath + 'artist_name_64PCA.h5')) #ignore this in later tests
 
-genre_ids = normalize(file_read('genre_ids_64PCA.h5'))
+genre_ids = normalize(file_read(myPath + 'genre_ids_64PCA.h5'))
 
-lyricist_and_composer = normalize(file_read('lyricist_and_composer_with_song_id_new.h5'))
+lyricist_and_composer = normalize(file_read(myPath + 'lyricist_and_composer_with_song_id_new.h5'))
 
 song_length = pd.DataFrame(song_length[['song_id','song_length']])
 max_length = song_length['song_length'].quantile(.95)
 song_length['song_length'] = np.where(song_length['song_length'] > max_length, max_length, song_length['song_length'])
 song_length.index = song_length['song_id']
 
-msno_artist_name = file_read('msno_and_artist_name.h5')
+msno_artist_name = file_read(myPath + 'msno_and_artist_name_kmeans.h5')
 msno_artist_name = msno_artist_name.squeeze()
 msno_artist_name_classes = msno_artist_name.unique()
 
-msno_and_song_id = file_read('msno_and_song_id.h5')
+msno_and_song_id = file_read(myPath + 'msno_and_song_id_kmeans_v2.h5')
 msno_and_song_id = msno_and_song_id.squeeze()
 msno_and_song_id_classes = msno_and_song_id.unique()
 
@@ -269,24 +252,31 @@ source_system_tab_uniques = train['source_system_tab'].unique()
 source_screen_name_uniques = train['source_screen_name'].unique()
 source_type_uniques = train['source_type'].unique()
 
-#msno song_id source_system_tab source_screen_name source_type target
-split = len(train.index)//25
+#only reducing the train for test purposes
+split = len(train.index)//50
 train = train.sample(frac=1)
-test = train[:split]
-train = train[split:]
+train = train[:split]
 
-batch_size = 512
-model = createModel()
+unique_msno_values = train['msno'].unique()
 
-# Assuming you have a validation generator similar to your training generator
-real_time_metrics = RealTimeMetrics(generate_data(test, artist_name, genre_ids, lyricist_and_composer, song_length, msno_artist_name,
+# Split train and test
+train_msno, test_msno = train_test_split(unique_msno_values, test_size=0.25, random_state=42)
+test = train[~train['msno'].isin(train_msno)]
+train = train[train['msno'].isin(train_msno)]
+
+batch_size = 256
+
+# Callbacks
+test_data_generator = generate_data_test(test, artist_name, genre_ids, lyricist_and_composer, song_length, msno_artist_name,
                                    msno_and_song_id, source_system_tab_uniques, source_screen_name_uniques,
-                                  source_type_uniques, batch_size))
+                                  source_type_uniques, batch_size)
 
+early_stopping = EarlyStopping(monitor='val_loss',
+                               patience=3,
+                               restore_best_weights=True)
 print(model.summary())
 model.fit(generate_data(train, artist_name, genre_ids, lyricist_and_composer, song_length, msno_artist_name,
-                                   msno_and_song_id, source_system_tab_uniques, source_screen_name_uniques,
+                                  msno_and_song_id, source_system_tab_uniques, source_screen_name_uniques,
                                   source_type_uniques, batch_size), steps_per_epoch=len(train)//batch_size,
-                                  epochs=10,
-                                  callbacks=[real_time_metrics]
-                                  )
+                                  epochs=10, validation_data=test_data_generator, validation_steps=40,
+                                  callbacks=[early_stopping])
