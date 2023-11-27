@@ -25,12 +25,14 @@ class RealTimeMetrics(Callback):
         val_loss, val_accuracy = self.model.evaluate(self.validation_data, verbose=0)
         print(f'Validation Loss: {val_loss:.4f} - Validation Accuracy: {val_accuracy:.4f}')
 
+
 def file_read(location):
     df = pd.read_hdf(location, 'df')
     return df
 
 
 def createModel():
+    #still testing this
     # Define input layers
     ArtistName = Input(shape=(64,))
     GenreIds = Input(shape=(64,))
@@ -42,15 +44,15 @@ def createModel():
 
     shared_layers = []
 
-    artistName = Dense(32, activation=LeakyReLU(alpha=0.01), kernel_initializer=RandomNormal(stddev=0.05))(ArtistName)
+    artistName = Dense(128, activation=LeakyReLU(alpha=0.01), kernel_initializer=RandomNormal(stddev=0.05))(ArtistName)
     artistName = Dropout(0.3)(artistName)
     shared_layers.append(Model(inputs=ArtistName, outputs=artistName))
 
-    genreIds = Dense(32, activation=LeakyReLU(alpha=0.01), kernel_initializer=RandomNormal(stddev=0.05))(GenreIds)
+    genreIds = Dense(128, activation=LeakyReLU(alpha=0.01), kernel_initializer=RandomNormal(stddev=0.05))(GenreIds)
     genreIds = Dropout(0.3)(genreIds)
     shared_layers.append(Model(inputs=GenreIds, outputs=genreIds))
 
-    lyricistAndComposer = Dense(32, activation=LeakyReLU(alpha=0.01), kernel_initializer=RandomNormal(stddev=0.05))(
+    lyricistAndComposer = Dense(64, activation=LeakyReLU(alpha=0.01), kernel_initializer=RandomNormal(stddev=0.05))(
         LyricistAndComposer)
     lyricistAndComposer = Dropout(0.3)(lyricistAndComposer)
     shared_layers.append(Model(inputs=LyricistAndComposer, outputs=lyricistAndComposer))
@@ -59,22 +61,22 @@ def createModel():
     songLength = Dropout(0.3)(songLength)
     shared_layers.append(Model(inputs=SongLength, outputs=songLength))
 
-    rest = Dense(20, activation=LeakyReLU(alpha=0.01), kernel_initializer=RandomNormal(stddev=0.05))(Rest)
+    rest = Dense(72, activation=LeakyReLU(alpha=0.01), kernel_initializer=RandomNormal(stddev=0.05))(Rest)
     rest = Dropout(0.3)(rest)
     shared_layers.append(Model(inputs=Rest, outputs=rest))
 
-    msnoArtistName = Dense(64, activation=LeakyReLU(alpha=0.01), kernel_initializer=RandomNormal(stddev=0.05))(
+    msnoArtistName = Dense(256, activation=LeakyReLU(alpha=0.01), kernel_initializer=RandomNormal(stddev=0.05))(
         MsnoArtistName)
     msnoArtistName = Dropout(0.3)(msnoArtistName)
     shared_layers.append(Model(inputs=MsnoArtistName, outputs=msnoArtistName))
 
-    msnoSongId = Dense(64, activation=LeakyReLU(alpha=0.01), kernel_initializer=RandomNormal(stddev=0.05))(MsnoSongId)
+    msnoSongId = Dense(256, activation=LeakyReLU(alpha=0.01), kernel_initializer=RandomNormal(stddev=0.05))(MsnoSongId)
     msnoSongId = Dropout(0.3)(msnoSongId)
     shared_layers.append(Model(inputs=MsnoSongId, outputs=msnoSongId))
 
     # Merge the models
     combinedRegular = concatenate([layer.output for layer in shared_layers])
-    modelRegular = Dense(128, activation="relu", kernel_initializer=RandomNormal(stddev=0.05))(combinedRegular)
+    modelRegular = Dense(512, activation="relu", kernel_initializer=RandomNormal(stddev=0.05))(combinedRegular)
     modelRegular = Dropout(0.35)(modelRegular)
     modelRegular = Model(inputs=[layer.input for layer in shared_layers], outputs=modelRegular)
 
@@ -98,10 +100,10 @@ def createModel():
     test = Dense(1, activation="sigmoid", kernel_initializer=GlorotNormal(seed=42))(modelRegular.output)
     test = Model(inputs=modelRegular.input, outputs=test)
 
-    initial_learning_rate = 0.00025
+    initial_learning_rate = 0.00035
     lr_schedule = ExponentialDecay(
         initial_learning_rate,
-        decay_steps=20,
+        decay_steps=432,
         decay_rate=0.9
     )
 
@@ -171,8 +173,8 @@ def add_noise(data, noise_level=0.02):
 def generate_data(df, artist_name, genre_ids, lyricist_and_composer, song_length, msno_artist_name,
                                    msno_and_song_id, source_system_tab_uniques, source_screen_name_uniques,
                                   source_type_uniques, split):
-    while True:  # Loop indefinitely for validation
-        shuffled_df = df.sample(frac=1, random_state=42).copy()  # Shuffle the dataframe
+    while True:
+        shuffled_df = df.sample(frac=1, random_state=42).copy()
         while not shuffled_df.empty:
             partial_train = shuffled_df[:split]
             shuffled_df = shuffled_df[split:]
@@ -197,8 +199,8 @@ def generate_data(df, artist_name, genre_ids, lyricist_and_composer, song_length
 def generate_data_test(df, artist_name, genre_ids, lyricist_and_composer, song_length, msno_artist_name,
                                    msno_and_song_id, source_system_tab_uniques, source_screen_name_uniques,
                                   source_type_uniques, split):
-    while True:  # Loop indefinitely for validation
-        shuffled_df = df.sample(frac=1, random_state=42).copy()  # Shuffle the dataframe
+    while True:
+        shuffled_df = df.sample(frac=1, random_state=42).copy()
         while not shuffled_df.empty:
             partial_train = shuffled_df[:split]
             shuffled_df = shuffled_df[split:]
@@ -240,11 +242,11 @@ max_length = song_length['song_length'].quantile(.95)
 song_length['song_length'] = np.where(song_length['song_length'] > max_length, max_length, song_length['song_length'])
 song_length.index = song_length['song_id']
 
-msno_artist_name = file_read(myPath + 'msno_and_artist_name_kmeans.h5')
+msno_artist_name = file_read(myPath + 'msno_artist_name_autoencoder_2.h5')
 msno_artist_name = msno_artist_name.squeeze()
 msno_artist_name_classes = msno_artist_name.unique()
 
-msno_and_song_id = file_read(myPath + 'msno_and_song_id_kmeans_v2.h5')
+msno_and_song_id = file_read(myPath + 'msno_song_id_autoencoder_4.h5')
 msno_and_song_id = msno_and_song_id.squeeze()
 msno_and_song_id_classes = msno_and_song_id.unique()
 
@@ -264,7 +266,7 @@ train_msno, test_msno = train_test_split(unique_msno_values, test_size=0.25, ran
 test = train[~train['msno'].isin(train_msno)]
 train = train[train['msno'].isin(train_msno)]
 
-batch_size = 256
+batch_size = 1024
 
 # Callbacks
 test_data_generator = generate_data_test(test, artist_name, genre_ids, lyricist_and_composer, song_length, msno_artist_name,

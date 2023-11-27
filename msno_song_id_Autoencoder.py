@@ -68,9 +68,9 @@ def createModel(input_dim, encoding_dim):
 
 # Function to generate data for training the autoencoder
 def generate_data(df, batch, un, num_epochs = 10):
-    while True:  # Loop indefinitely
+    while True:
         for _ in range(num_epochs):
-            shuffled_df = df.sample(frac=1, random_state=42).copy()  # Shuffle the dataframe
+            shuffled_df = df.sample(frac=1, random_state=42).copy()
             while not shuffled_df.empty:
                 df_chunk = shuffled_df[:batch]
                 shuffled_df = shuffled_df[batch:]
@@ -86,9 +86,9 @@ def generate_data(df, batch, un, num_epochs = 10):
                 yield df_chunk, df_chunk
 
 
-def generate_data_test(df, batch, un, num_epochs = 10):
-    while True:  # Loop indefinitely for validation
-        shuffled_df = df.sample(frac=1, random_state=42).copy()  # Shuffle the dataframe
+def generate_data_test(df, batch, un):
+    while True:
+        shuffled_df = df.sample(frac=1, random_state=42).copy()
         while not shuffled_df.empty:
             df_chunk = shuffled_df[:batch]
             shuffled_df = shuffled_df[batch:]
@@ -132,30 +132,19 @@ print("yuh yuh yuh")
 train = og_train
 del og_train
 batch_size = 2048
+finalArray = pd.DataFrame()
 while not train.empty:
     print(((i + 1) * batch_size) / length)
     partial_array = train[:batch_size]
     train = train[batch_size:]
-    if first_time:
-        partial_array = (partial_array.str.split('|', expand=True)
-                         .stack()
-                         .groupby(level=0)
-                         .value_counts()
-                         .unstack(fill_value=0))
-
-        partial_array = partial_array.apply(lambda x: (x > 0).astype(int))
-        finalArray = pd.DataFrame(partial_array.T.reindex(un).T.to_numpy()).fillna(0)
-        finalArray = pd.DataFrame(encoder.predict(finalArray))
-        first_time = False
-    else:
-        partial_array = (partial_array.str.split('|', expand=True)
-                         .stack()
-                         .groupby(level=0)
-                         .value_counts()
-                         .unstack(fill_value=0))
-        partial_array = partial_array.apply(lambda x: (x > 0).astype(int))
-        partial_array = pd.DataFrame(partial_array.T.reindex(un).T.to_numpy()).fillna(0)
-        finalArray = pd.concat([finalArray, pd.DataFrame(encoder.predict(partial_array))])
+    partial_array = (partial_array.str.split('|', expand=True)
+                     .stack()
+                     .groupby(level=0)
+                     .value_counts()
+                     .unstack(fill_value=0))
+    partial_array = partial_array.apply(lambda x: (x > 0).astype(int))
+    partial_array = pd.DataFrame(partial_array.T.reindex(un).T.to_numpy()).fillna(0)
+    finalArray = pd.concat([finalArray, pd.DataFrame(encoder.predict(partial_array))])
     i = i + 1
 
 scaler = MinMaxScaler()

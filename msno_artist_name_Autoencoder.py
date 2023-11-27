@@ -76,9 +76,9 @@ def createModel(input_dim, encoding_dim):
 
 # Generates training data
 def generate_data(df, batch, un, num_epochs = 10):
-    while True:  # Loop indefinitely
+    while True:
         for _ in range(num_epochs):
-            shuffled_df = df.sample(frac=1, random_state=42).copy()  # Shuffle the dataframe
+            shuffled_df = df.sample(frac=1, random_state=42).copy()
             while not shuffled_df.empty:
                 df_chunk = shuffled_df[:batch]
                 shuffled_df = shuffled_df[batch:]
@@ -96,8 +96,8 @@ def generate_data(df, batch, un, num_epochs = 10):
 
 # Generates test data
 def generate_data_test(df, batch, un):
-    while True:  # Loop indefinitely for validation
-        shuffled_df = df.sample(frac=1, random_state=42).copy()  # Shuffle the dataframe
+    while True:
+        shuffled_df = df.sample(frac=1, random_state=42).copy()
         while not shuffled_df.empty:
             df_chunk = shuffled_df[:batch]
             shuffled_df = shuffled_df[batch:]
